@@ -1,21 +1,25 @@
-from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import balanced_accuracy_score
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neural_network import MLPClassifier
+from sklearn.ensemble import VotingClassifier
 from sklearn.naive_bayes import GaussianNB
 import numpy as np
 from sklearn.model_selection import RepeatedStratifiedKFold
 from sklearn.base import clone
 from tqdm import tqdm
+from sklearn.model_selection import RandomizedSearchCV
 
 # Set up the classifiers
 clfs = {
-    'GNB': GaussianNB(),
-    'SVM': SVC(kernel='rbf'),
-    'MLP': MLPClassifier(max_iter=5000),
-    'DT': DecisionTreeClassifier()
+    'GNB': GaussianNB(var_smoothing=1e-09),
+    'SVM': SVC(kernel='rbf', C=1, gamma=0.1, probability=True),
+    'MLP': MLPClassifier(max_iter=5000, hidden_layer_sizes=(20,), alpha=0.01),
+    'DT': DecisionTreeClassifier(max_depth=4, min_samples_split=4, min_samples_leaf=2),
+    'Bag': False
 }
+classifier_set = [('gnb', clfs['GNB']), ('svm', clfs['SVM']), ('mlp', clfs['MLP']), ('dt', clfs['DT'])]
+clfs['Bag'] = VotingClassifier(estimators=classifier_set)
 
 # Set up the datasets
 datasets = ['australian', 'balance', 'breastcan', 'cryotherapy', 'diabetes',
@@ -29,7 +33,9 @@ param_grid = [{'var_smoothing': [1e-9, 1e-3, 1e-6, 1e-12]},
               {'C': [0.1, 1, 10, 100], 'gamma': [0.01, 0.1, 1, 10]},
               {'hidden_layer_sizes': [(10,), (20,), (30,)], 'alpha': [0.1, 0.01, 0.001]},
               {'max_depth': [2, 4, 6, 8], 'min_samples_split': [2, 4, 6, 8],
-               'min_samples_leaf': [1, 2, 4, 6]}
+               'min_samples_leaf': [1, 2, 4, 6]},
+              {'voting': ['hard', 'soft'],
+               'weights': [[1, 1, 1, 1], [2, 1, 1, 1], [1, 2, 1, 1], [1, 1, 2, 1], [1, 1, 1, 2]]}
               ]
 # ==================================================================================================
 
@@ -46,23 +52,28 @@ for data_id, dataset in tqdm(enumerate(datasets), total=len(datasets), desc="Dat
     y = dataset[:, -1].astype(int)
 
     for fold_id, (train, test) in tqdm(enumerate(rskf.split(X, y)), total=n_splits * n_repeats, desc="Fold"):
-        # print(fold_id)
         for clf_id, clf_name in enumerate(clfs):
             clf = clone(clfs[clf_name])
 
-            # Set up the grid search
-            grid_search = GridSearchCV(clf, param_grid[clf_id], cv=5, verbose=0, n_jobs=-1)
-            # Fit the grid search to the data
-            grid_search.fit(X[train], y[train])
+            # Calculate max number of combinations in param_grid
+            max_iter = 1
+            for key in param_grid[clf_id]:
+                max_iter *= len(param_grid[clf_id][key])
+
+            # create the randomized search object
+            search = RandomizedSearchCV(clf, param_grid[clf_id], cv=5, n_iter=max(max_iter / 3, 1), random_state=0)
+
+            # fit the search object to the training data
+            search.fit(X[train], y[train])
 
             # Get the best hyperparameters
-            best_params = grid_search.best_params_
+            best_params = search.best_params_
             # Get the best estimator
-            best_estimator = grid_search.best_estimator_
+            best_estimator = search.best_estimator_
 
             # Predict on the validation set using the GNB classifier
             y_pred = best_estimator.predict(X[test])
             # Calculate the accuracy of the GNB classifier
             scores[clf_id, data_id, fold_id] = balanced_accuracy_score(y[test], y_pred)
 
-np.save('results_ex2G', scores)
+np.save('results_ex3M', scores)

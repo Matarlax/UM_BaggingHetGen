@@ -3,6 +3,7 @@ from sklearn.metrics import balanced_accuracy_score
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neural_network import MLPClassifier
+from sklearn.ensemble import VotingClassifier
 from sklearn.naive_bayes import GaussianNB
 import numpy as np
 from sklearn.model_selection import RepeatedStratifiedKFold
@@ -11,11 +12,14 @@ from tqdm import tqdm
 
 # Set up the classifiers
 clfs = {
-    'GNB': GaussianNB(),
-    'SVM': SVC(kernel='rbf'),
-    'MLP': MLPClassifier(max_iter=5000),
-    'DT': DecisionTreeClassifier()
+    'GNB': GaussianNB(var_smoothing=1e-09),
+    'SVM': SVC(kernel='rbf', C=1, gamma=0.1, probability=True),
+    'MLP': MLPClassifier(max_iter=5000, hidden_layer_sizes=(20,), alpha=0.01),
+    'DT': DecisionTreeClassifier(max_depth=4, min_samples_split=4, min_samples_leaf=2),
+    'Bag': False
 }
+classifier_set = [('gnb', clfs['GNB']), ('svm', clfs['SVM']), ('mlp', clfs['MLP']), ('dt', clfs['DT'])]
+clfs['Bag'] = VotingClassifier(estimators=classifier_set)
 
 # Set up the datasets
 datasets = ['australian', 'balance', 'breastcan', 'cryotherapy', 'diabetes',
@@ -29,7 +33,9 @@ param_grid = [{'var_smoothing': [1e-9, 1e-3, 1e-6, 1e-12]},
               {'C': [0.1, 1, 10, 100], 'gamma': [0.01, 0.1, 1, 10]},
               {'hidden_layer_sizes': [(10,), (20,), (30,)], 'alpha': [0.1, 0.01, 0.001]},
               {'max_depth': [2, 4, 6, 8], 'min_samples_split': [2, 4, 6, 8],
-               'min_samples_leaf': [1, 2, 4, 6]}
+               'min_samples_leaf': [1, 2, 4, 6]},
+              {'voting': ['hard', 'soft'],
+               'weights': [[1, 1, 1, 1], [2, 1, 1, 1], [1, 2, 1, 1], [1, 1, 2, 1], [1, 1, 1, 2]]}
               ]
 # ==================================================================================================
 
@@ -65,4 +71,4 @@ for data_id, dataset in tqdm(enumerate(datasets), total=len(datasets), desc="Dat
             # Calculate the accuracy of the GNB classifier
             scores[clf_id, data_id, fold_id] = balanced_accuracy_score(y[test], y_pred)
 
-np.save('results_ex2G', scores)
+np.save('results_ex3G', scores)

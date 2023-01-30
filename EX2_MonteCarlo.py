@@ -1,7 +1,4 @@
-from sklearn.datasets import make_classification
-from sklearn.model_selection import train_test_split
-from sklearn.model_selection import GridSearchCV
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import balanced_accuracy_score
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neural_network import MLPClassifier
@@ -9,31 +6,30 @@ from sklearn.naive_bayes import GaussianNB
 import numpy as np
 from sklearn.model_selection import RepeatedStratifiedKFold
 from sklearn.base import clone
-from sklearn.metrics import accuracy_score
-from scipy.stats import rankdata
 from sklearn.model_selection import RandomizedSearchCV
+from tqdm import tqdm
 
 # Set up the classifiers
 clfs = {
     'GNB': GaussianNB(),
     'SVM': SVC(kernel='rbf'),
-    # 'MLP': MLPClassifier(max_iter=5000),
-    # 'DT': DecisionTreeClassifier()
+    'MLP': MLPClassifier(max_iter=5000),
+    'DT': DecisionTreeClassifier()
 }
 
 # Set up the datasets
-datasets = ['australian', 'balance', 'breastcan', 'cryotherapy', 'diabetes'
-            # ,'digit', 'ecoli4', 'german', 'glass2', 'heart', 'ionosphere'
-            # ,'liver', 'monkthree', 'shuttle-c0-vs-c4', 'sonar', 'soybean'
-            # ,'vowel0', 'waveform', 'wisconsin', 'yeast3'
+datasets = ['australian', 'balance', 'breastcan', 'cryotherapy', 'diabetes',
+            'digit', 'ecoli4', 'german', 'glass2', 'heart'
+            # 'ionosphere', 'liver', 'monkthree', 'shuttle-c0-vs-c4', 'sonar', 'soybean'
+            # , 'vowel0', 'waveform', 'wisconsin', 'yeast3'
             ]
 
 # Set up the hyperparameter grids
-param_grid = [{'var_smoothing': [1e-9, 1e-3]},
-              {'C': [0.1, 1, 10, 100], 'gamma': [0.01, 0.1, 1, 10]}
-              # ,{'hidden_layer_sizes': [(10,), (20,), (30,), (40,)], 'alpha': [0.1, 0.01, 0.001, 0.0001]}
-              # ,{'max_depth': [2, 4, 6, 8, 10], 'min_samples_split': [2, 4, 6, 8, 10]
-              #  ,'min_samples_leaf': [1, 2, 4, 6, 8]}
+param_grid = [{'var_smoothing': [1e-9, 1e-3, 1e-6, 1e-12]},
+              {'C': [0.1, 1, 10, 100], 'gamma': [0.01, 0.1, 1, 10]},
+              {'hidden_layer_sizes': [(10,), (20,), (30,)], 'alpha': [0.1, 0.01, 0.001]},
+              {'max_depth': [2, 4, 6, 8], 'min_samples_split': [2, 4, 6, 8],
+               'min_samples_leaf': [1, 2, 4, 6]}
               ]
 # ==================================================================================================
 
@@ -44,12 +40,12 @@ rskf = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=n_repeats, random_st
 
 scores = np.zeros((len(clfs), n_datasets, n_splits * n_repeats))
 
-for data_id, dataset in enumerate(datasets):
+for data_id, dataset in tqdm(enumerate(datasets), total=len(datasets), desc="Dataset", colour="blue"):
     dataset = np.genfromtxt("datasets/%s.csv" % dataset, delimiter=",")
     X = dataset[:, :-1]
     y = dataset[:, -1].astype(int)
 
-    for fold_id, (train, test) in enumerate(rskf.split(X, y)):
+    for fold_id, (train, test) in tqdm(enumerate(rskf.split(X, y)), total=n_splits * n_repeats, desc="Fold"):
         for clf_id, clf_name in enumerate(clfs):
             clf = clone(clfs[clf_name])
 
@@ -66,30 +62,13 @@ for data_id, dataset in enumerate(datasets):
 
             # Get the best hyperparameters
             best_params = search.best_params_
+            #print(best_params)
             # Get the best estimator
             best_estimator = search.best_estimator_
 
             # Predict on the validation set using the GNB classifier
             y_pred = best_estimator.predict(X[test])
             # Calculate the accuracy of the GNB classifier
-            scores[clf_id, data_id, fold_id] = accuracy_score(y[test], y_pred)
+            scores[clf_id, data_id, fold_id] = balanced_accuracy_score(y[test], y_pred)
 
-np.save('results', scores)
-
-scores = np.load('results.npy')
-print("\nScores:\n", scores.shape)
-
-mean_scores = np.mean(scores, axis=2).T
-print("\nMean scores:\n", mean_scores)
-
-mean_score = np.mean(mean_scores, axis=0)
-print("\nMean score:\n", mean_score)
-
-ranks = []
-for ms in mean_scores:
-    ranks.append(rankdata(ms).tolist())
-ranks = np.array(ranks)
-print("\nRanks:\n", ranks)
-
-mean_ranks = np.mean(ranks, axis=0)
-print("\nMean ranks:\n", mean_ranks)
+np.save('results_ex2M', scores)

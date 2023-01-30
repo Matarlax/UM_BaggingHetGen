@@ -1,7 +1,6 @@
 from sklearn.datasets import make_classification
-from sklearn.model_selection import train_test_split
 from sklearn.model_selection import GridSearchCV
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import balanced_accuracy_score
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neural_network import MLPClassifier
@@ -9,10 +8,10 @@ from sklearn.naive_bayes import GaussianNB
 import numpy as np
 from sklearn.base import clone
 from sklearn.model_selection import RepeatedStratifiedKFold
-from scipy.stats import rankdata
 import csv
 import os
 from sklearn.model_selection import RandomizedSearchCV
+from tqdm import tqdm
 
 X, y = make_classification(n_samples=1000, n_features=20, n_informative=15,
                            n_redundant=5, n_classes=2, random_state=42)
@@ -30,14 +29,12 @@ with open('datasets/synth_dataset.csv', 'w', newline='') as f:
     for x, y in zip(X, y):
         writer.writerow(list(x) + [y])
 
-# X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
-
 # Set up the classifiers
 clfs = {
     'GNB': GaussianNB(),
     'SVM': SVC(kernel='rbf'),
-    # 'MLP': MLPClassifier(max_iter=5000),
-    # 'DT': DecisionTreeClassifier()
+    'MLP': MLPClassifier(max_iter=5000),
+    'DT': DecisionTreeClassifier()
 }
 
 datasets = {
@@ -45,11 +42,11 @@ datasets = {
 }
 
 # Set up the hyperparameter grids
-param_grid = [{'var_smoothing': [1e-9, 1e-3]},
-              {'C': [0.1, 1, 10, 100], 'gamma': [0.01, 0.1, 1, 10]}
-              # ,{'hidden_layer_sizes': [(10,), (20,), (30,), (40,)], 'alpha': [0.1, 0.01, 0.001, 0.0001]}
-              # ,{'max_depth': [2, 4, 6, 8, 10], 'min_samples_split': [2, 4, 6, 8, 10]
-              #  ,'min_samples_leaf': [1, 2, 4, 6, 8]}
+param_grid = [{'var_smoothing': [1e-9, 1e-3, 1e-6, 1e-12]},
+              {'C': [0.1, 1, 10, 100], 'gamma': [0.01, 0.1, 1, 10]},
+              {'hidden_layer_sizes': [(10,), (20,), (30,)], 'alpha': [0.1, 0.01, 0.001]},
+              {'max_depth': [2, 4, 6, 8], 'min_samples_split': [2, 4, 6, 8],
+               'min_samples_leaf': [1, 2, 4, 6]}
               ]
 # ==================================================================================================
 
@@ -60,18 +57,18 @@ rskf = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=n_repeats, random_st
 
 scores = np.zeros((len(clfs), n_datasets, n_splits * n_repeats))
 
-for data_id, dataset in enumerate(datasets):
+print("\nGridSearch ========================================\n")
+for data_id, dataset in tqdm(enumerate(datasets), total=len(datasets), desc="Dataset", colour="blue"):
     dataset = np.genfromtxt("datasets/%s.csv" % dataset, delimiter=",")
     X = dataset[:, :-1]
     y = dataset[:, -1].astype(int)
 
-    for fold_id, (train, test) in enumerate(rskf.split(X, y)):
-        print(len(X),len(train),len(test))
+    for fold_id, (train, test) in tqdm(enumerate(rskf.split(X, y)), total=n_splits * n_repeats, desc="Fold"):
         for clf_id, clf_name in enumerate(clfs):
             clf = clone(clfs[clf_name])
 
             # Set up the grid search
-            grid_search = GridSearchCV(clf, param_grid[clf_id], cv=5, verbose=1, n_jobs=-1)
+            grid_search = GridSearchCV(clf, param_grid[clf_id], cv=5, verbose=0, n_jobs=-1)
             # Fit the grid search to the data
             grid_search.fit(X[train], y[train])
 
@@ -83,24 +80,17 @@ for data_id, dataset in enumerate(datasets):
             # Predict on the validation set using the GNB classifier
             y_pred = best_estimator.predict(X[test])
             # Calculate the accuracy of the GNB classifier
-            scores[clf_id, data_id, fold_id] = accuracy_score(y[test], y_pred)
+            scores[clf_id, data_id, fold_id] = balanced_accuracy_score(y[test], y_pred)
 
-np.save('results', scores)
+np.save('results_ex1G', scores)
 
-scores = np.load('results.npy')
-print("\nScores:\n", scores.shape)
-
-mean_scores = np.mean(scores, axis=2).T
-print("\nMean scores:\n", mean_scores)
-
-print("MonteCarlo ========================================")
-
-for data_id, dataset in enumerate(datasets):
+print("\nMonteCarlo ========================================\n")
+for data_id, dataset in tqdm(enumerate(datasets), total=len(datasets), desc="Dataset", colour="blue"):
     dataset = np.genfromtxt("datasets/%s.csv" % dataset, delimiter=",")
     X = dataset[:, :-1]
     y = dataset[:, -1].astype(int)
 
-    for fold_id, (train, test) in enumerate(rskf.split(X, y)):
+    for fold_id, (train, test) in tqdm(enumerate(rskf.split(X, y)), total=n_splits * n_repeats, desc="Fold"):
         for clf_id, clf_name in enumerate(clfs):
             clf = clone(clfs[clf_name])
 
@@ -123,12 +113,6 @@ for data_id, dataset in enumerate(datasets):
             # Predict on the validation set using the GNB classifier
             y_pred = best_estimator.predict(X[test])
             # Calculate the accuracy of the GNB classifier
-            scores[clf_id, data_id, fold_id] = accuracy_score(y[test], y_pred)
+            scores[clf_id, data_id, fold_id] = balanced_accuracy_score(y[test], y_pred)
 
-np.save('results', scores)
-
-scores = np.load('results.npy')
-print("\nScores:\n", scores.shape)
-
-mean_scores = np.mean(scores, axis=2).T
-print("\nMean scores:\n", mean_scores)
+np.save('results_ex1M', scores)
